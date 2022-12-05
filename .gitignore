@@ -127,3 +127,14 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Specific folders
+results/
+wandb/
+lightning_logs/
+GAN_Normal_ds4/
+
+# Data
+*.pickle
+*.d
+*.csv

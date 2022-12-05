@@ -1,0 +1,32 @@
+### training 
+
+program: main.py
+
+method: grid
+
+metric:
+  name: F1_test
+  goal: maximize
+
+parameters:
+  batch_size:
+    values: [64]
+  epochs:
+    values: [300]
+  learning_rate:
+    values: [5e-4]
+  weight_decay:
+    values: [1e0] #, 1e-6, 1e-9]
+  ### GAN Model
+  latent_dim:
+    values: [64]
+  model:
+    values: ['cnn']
+  ### normalization
+  normalization:
+    values: ['z-score']
+  ### pre-processing
+  level:
+    values: [8] 
+  wavelet:
+    values: ['db4']
