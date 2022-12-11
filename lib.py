@@ -9,6 +9,7 @@ import matplotlib
 import scipy.stats
 import pickle
 import os
+from scipy.signal import welch
 import pandas as pd
 import seaborn as sn
 
@@ -55,6 +56,18 @@ def get_wpt_features(signal:np.array, level:int, wavelet:str='db4'):
     e = np.stack(e)
     return e
 
+def get_psd_features(signal:np.array, n_window:int):
+    '''Extracts the PSD of the signal with a Hamming window and 75% overlap.
+    Args:
+        signal: input array, shape (n_time)
+        level: level of decomposition
+        n_window: Hamming window size
+    Returns:
+        X: PSD amplitudes, shape (n_window//2)
+    '''
+    _,X = welch(x=signal, window="hamming", nperseg=n_window, noverlap=int(0.75*n_window))
+    return X[1:]
+
 def pre_process(features:np.array, level:int, wavelet:str) -> np.array:
     '''Pre-processing applied to features in data:
         - removes X channel
@@ -82,6 +95,38 @@ def pre_process(features:np.array, level:int, wavelet:str) -> np.array:
             for dir in [2,1]: # directions Z and Y
                 x = features[sample, sensor, dir, :]
                 temp.append(get_wpt_features(signal=x, level=level, wavelet=wavelet))
+        processed_features.append(np.hstack(temp))
+    
+    processed_features = np.array(processed_features)
+    return processed_features
+
+def pre_process_psd(features:np.array, n_window:int) -> np.array:
+    '''Pre-processing applied to features in data:
+        - removes X channel
+        - extracts PSD features
+        - unifies features from Y,Z  channels for each sensor. Ordering:
+            - [S4_Z (2**level),
+               S4_Y (2**level),
+               S3_Z (2**level),
+               S3_Y (2**level),
+               ...
+               S1_Z (2**level),
+               S1_Y (2**level)]
+    Args:
+        features: raw signals (n_samples, n_sensors, n_directions, n_time)
+        level: level of WPT decomposition
+        wavelet: wavelet family
+    Returns:
+        processed_features: shape (n_samples, 4*2*(n_window//2))
+    '''
+    n_samples = features.shape[0]
+    processed_features = []
+    for sample in range(n_samples):
+        temp = []
+        for sensor in range(4):
+            for dir in [2,1]: # directions Z and Y
+                x = features[sample, sensor, dir, :]
+                temp.append(get_psd_features(signal=x, n_window=n_window))
         processed_features.append(np.hstack(temp))
     
     processed_features = np.array(processed_features)
@@ -132,8 +177,34 @@ def load_from_directory(path:str, level:int, wavelet:str):
     output["rms"] = np.vstack(output["rms"])
     output["tensions"] = np.vstack(output["tensions"])
     return output
-        
-def save_to_pickle_ds4(path:str, classmap:dict, level:int, wavelet:str) -> None:
+
+def load_from_directory_psd(path:str, n_window:int):
+    '''Computes the data dict with PSD features.'''
+    files = os.listdir(path)
+    files.sort()
+
+    output = {"features":[], "rms":[], "tensions":[], "filename":[], "y":[]}
+    for f in tqdm(files):
+        with open(path + f, "rb") as handle:
+            data = pickle.load(handle)
+            wpt = pre_process_psd(
+                features = np.expand_dims(data["features"],0),
+                n_window=n_window
+            )
+            rms = get_rms_features(np.expand_dims(data["features"],0))
+
+            output["features"].append(wpt)
+            output["rms"].append(rms)
+            output["tensions"].append(np.expand_dims(data["tensions"],0))
+            output["filename"].append(data["filename"])
+            output["y"].append(data["y"])
+
+    output["features"] = np.vstack(output["features"])
+    output["rms"] = np.vstack(output["rms"])
+    output["tensions"] = np.vstack(output["tensions"])
+    return output 
+
+def save_to_pickle_wpt_ds4(path:str, classmap:dict, level:int, wavelet:str) -> None:
     '''Saves dataset from singles files in path to pickle format.
     Only appliable to dataset 4 (small tower).
     Args:
@@ -149,6 +220,25 @@ def save_to_pickle_ds4(path:str, classmap:dict, level:int, wavelet:str) -> None:
     cl = list(map(lambda x: int(classmap[str(x)]), data["y"]))
     data["y"] = np.array(cl)
     with open(f"data/data_4_{wavelet}_level{level}.pickle", "wb") as handle:
+        pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+def save_to_pickle_psd_ds4(path:str, n_window:int, classmap:dict=None) -> None:
+    '''Saves dataset as PSD amplitudes from singles files in path to pickle format.
+    Only appliable to dataset 4 (small tower).
+    Args:
+        path: path to the input data
+        classmap: dict containing mappings of "y" field. None by default (y=0 always)
+        n_window: Hamming window size
+    '''
+    data = load_from_directory_psd(
+        path=path, n_window=n_window
+    )
+    if classmap==None:
+        data["y"] = np.zeros(data["features"].shape[0])
+    else:
+        cl = list(map(lambda x: int(classmap[str(x)]), data["y"]))
+        data["y"] = np.array(cl)
+    with open(f"data/data_4_psd.pickle", "wb") as handle:
         pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 def load_to_memory(path:str, level:int, wavelet:str):
@@ -167,17 +257,90 @@ def load_to_memory(path:str, level:int, wavelet:str):
     data['T'] = []
     return data
 
-def load_preprocessed(filename:str, level:int, wavelet:str):
+def load_preprocessed(filename:str, level:int, wavelet:str, channels:str="all"):
     '''Loads preprocessed dataset.
     Path format: {filename}_{wavelet}_level{level}.pickle
     Args:
         path: path to data
         level: WPT decomposition level
         wavelet: wavelet family
+        channels: 'all' to use Y and Z, "comp" to compose Y and Z via vectorial sum
+    Returns:
+        data: dict with keys:
+            "features" (n_samples, n_sensors, n_channels, n_freq),
+            "tensions" (n_samples, 4),
+            "y", "incx", "incy", "T", "filename"
     '''
     path = f'{filename}_{wavelet}_level{level}.pickle'
     with open(path, 'rb') as handle:
         data = pickle.load(handle)
+
+    # data["features"] is arranged as [ S4Z, S4Y, S3Z, S3Y, ..., S1Z, S1Y ]
+
+    if channels == "all":
+        n_samples = data["features"].shape[0]
+        n_sensors = 4
+        n_channels = 2
+        n_freq = 2**level
+        features = np.zeros((n_samples, n_sensors, n_channels, n_freq))
+        for n in range(n_samples):
+            for s in range(n_sensors):
+                features[n, s, 0, :] = data["features"][n][s*n_freq:(s+1)*n_freq]
+                features[n, s, 1, :] = data["features"][n][(s+1)*n_freq:(s+2)*n_freq]
+
+    if channels == "comp":
+        n_samples = data["features"].shape[0]
+        n_sensors = 4
+        n_channels = 1
+        n_freq = 2**level
+        features = np.zeros((n_samples, n_sensors, n_channels, n_freq))
+        for n in range(n_samples):
+            for s in range(n_sensors):
+                features[n, s, 0, :] = np.sqrt(data["features"][n][s*n_freq:(s+1)*n_freq]**2 + data["features"][n][(s+1)*n_freq:(s+2)*n_freq]**2)
+
+    data["features"] = features
+    return data
+
+def load_preprocessed_psd(filename:str, channels:str="all"):
+    '''Loads preprocessed dataset.
+    Path format: {filename}.pickle
+    Args:
+        path: path to data
+        channels: 'all' to use Y and Z, "comp" to compose Y and Z via vectorial sum
+    Returns:
+        data: dict with keys:
+            "features" (n_samples, n_sensors, n_channels, n_freq),
+            "tensions" (n_samples, 4),
+            "y", "incx", "incy", "T", "filename"
+    '''
+    path = f'{filename}.pickle'
+    with open(path, 'rb') as handle:
+        data = pickle.load(handle)
+
+    # data["features"] is arranged as [ S4Z, S4Y, S3Z, S3Y, ..., S1Z, S1Y ]
+
+    if channels == "all":
+        n_samples = data["features"].shape[0]
+        n_sensors = 4
+        n_channels = 2
+        n_freq = data["features"].shape[-1]//4//2
+        features = np.zeros((n_samples, n_sensors, n_channels, n_freq))
+        for n in range(n_samples):
+            for s in range(n_sensors):
+                features[n, s, 0, :] = data["features"][n][s*n_freq:(s+1)*n_freq]
+                features[n, s, 1, :] = data["features"][n][(s+1)*n_freq:(s+2)*n_freq]
+
+    if channels == "comp":
+        n_samples = data["features"].shape[0]
+        n_sensors = 4
+        n_channels = 1
+        n_freq = data["features"].shape[-1]//4//2
+        features = np.zeros((n_samples, n_sensors, n_channels, n_freq))
+        for n in range(n_samples):
+            for s in range(n_sensors):
+                features[n, s, 0, :] = np.sqrt(data["features"][n][s*n_freq:(s+1)*n_freq]**2 + data["features"][n][(s+1)*n_freq:(s+2)*n_freq]**2)
+
+    data["features"] = features
     return data
 
 def unify_data(data_list:list) -> dict:
@@ -335,46 +498,48 @@ def merge_data(data_tup:tuple) -> dict:
 
     return merged_data
 
+
+
 def predict(dataloader, model) -> dict:
-    ''' Makes predictions on the input dataloader.
+    ''' Makes predictions for each sensor on the input dataloader.
     Args:
         dataloader: dataloader with normalized data
         model: trained Pytorch model
     Returns:
-        predictions: dict containining each prediction
+        predictions: dict containining the predictions for each sensor
     '''
-    
-    error_list = []
-    x_list = []
-    x_norm_list = []
-    mu_list = []
-    stddev_list = []
-    y_list = []
-    t_list = []
-    x_rec_list = []
-    for x,y,t in dataloader:
-        with torch.no_grad():
-            mu, logvar, x_rec = model(x)
-        y_list.append(y.numpy())
-        t_list.append(t.numpy().mean(axis=1))
-        error = np.abs(x.numpy() - x_rec.numpy())
-        x_norm_list.append(x.numpy())
-        x_list.append(x.numpy())
-        x_rec_list.append(x_rec.numpy())
-        error_list.append(error)
-        mu_list.append(mu.numpy())
-        stddev_list.append(logvar.exp().numpy()**2)
+    predictions = {'s0':{}, 's1':{}, 's2':{}, 's3':{}}
 
-    predictions = {
-        'x': np.vstack(x_list),
-        'x_rec': np.vstack(x_rec_list),
-        'error': np.vstack(error_list),
-        'health_ind': np.vstack(error_list).mean(axis=1),
-        'mu': np.vstack(mu_list),
-        'stddev': np.vstack(stddev_list),
-        'y': np.hstack(y_list),
-        't_avg': np.hstack(t_list)
-    }
+    for k in predictions.keys():
+        predictions[k] = {
+            'x': [],
+            'x_rec': [],
+            'health_ind': [],
+            'mu': [],
+            'stddev': [],
+            't': [],  
+        }
+    model = model.to('cuda')
+    for x,s,t in tqdm(dataloader):
+        with torch.no_grad():
+            mu, logvar, x_rec = model(x.to('cuda'))
+            mu = mu.to('cpu')
+            logvar = logvar.to('cpu')
+            x_rec = x_rec.to('cpu')
+        error = np.abs(x.numpy() - x_rec.numpy())
+
+        for i in range(s.shape[0]): # storing each element of the batch
+            predictions[f's{s[i]}']['x'].append(x[[i]].numpy())
+            predictions[f's{s[i]}']['x_rec'].append(x_rec[[i]].numpy())
+            predictions[f's{s[i]}']['t'].append(t[[i]].numpy()[:,[s[i]]])
+            predictions[f's{s[i]}']['health_ind'].append(error[[i]].sum(axis=-1))
+            predictions[f's{s[i]}']['mu'].append(mu[[i]].numpy())
+            predictions[f's{s[i]}']['stddev'].append(logvar[[i]].exp().numpy()**2)
+
+    for s in predictions.keys():
+        for k in predictions[s].keys():
+            predictions[s][k] = np.vstack(predictions[s][k])
+
     return predictions
 
 
@@ -421,7 +586,6 @@ def predict_gan(dataloader, pl_model) -> dict:
         'proba': np.hstack(proba_list)
     }
     return predictions
-
 
 def plot_gan(predictions, pca) -> plt.figure:
     fig_x = plt.figure(figsize=(15,5))
@@ -474,26 +638,42 @@ def get_threshold(predictions:dict, model) -> float:
     return threshold
     
 def eval_anomaly(predictions:dict, mode:str, threshold:float):
-    '''Evaluates the anomaly detector in terms of TP,TN,FP,FN'''
-    ind = predictions['health_ind']
-    pred = 1*(ind > threshold)
+    '''Evaluates the anomaly detector in terms of TP,TN,FP,FN for each sensor.
+    Returns:
+        TP: dict of True Positives for each sensor (only if mode=="damage")  
+        FN: dict of False Negatives for each sensor (only if mode=="damage")  
+        TN: dict of True Negatives for each sensor (only if mode=="normal")  
+        FP: dict of False Positives for each sensor (only if mode=="normal")    
+    '''
+    TN = {}
+    FP = {}
+    TP = {}
+    FN = {}
+
     if mode=='normal':
-        gt = np.zeros_like(ind)
-        TN = (pred == gt).sum()
-        FP = (pred != gt).sum()
+        for s in predictions.keys():
+            ind = predictions[s]['health_ind']
+            pred = 1*(ind > threshold[s])
+            gt = np.zeros_like(ind)
+            TN[s] = (pred == gt).sum()
+            FP[s] = (pred != gt).sum()
         return TN, FP
     elif mode=='damage':
-        gt = np.ones_like(ind)
-        TP = (pred == gt).sum()
-        FN = (pred != gt).sum()
+        for s in predictions.keys():
+            ind = predictions[s]['health_ind']
+            pred = 1*(ind > threshold[s])
+            gt = np.ones_like(ind)
+            TP[s] = (pred == gt).sum()
+            FN[s] = (pred != gt).sum()
         return TP, FN
 
-def plot_train_val(train_pred:dict, val_pred:dict, threshold:float):
-    '''Plots the health index for the train and validation sets.
-    Returns: fig object
+def OLD_plot_train_val(train_pred:dict, val_pred:dict, threshold:float):
+    '''Plots the health index for the train and validation sets for each sensor.
+    Returns: 
+        fig object
     '''
-    h_train = train_pred['health_ind']
-    h_val = val_pred['health_ind']
+    h_train = train_pred[s]['health_ind']
+    h_val = val_pred[s]['health_ind']
     ind_train = np.arange(0,len(h_train))
     ind_val = np.arange(len(h_train),len(h_train)+len(h_val))
     
@@ -509,124 +689,72 @@ def plot_train_val(train_pred:dict, val_pred:dict, threshold:float):
     fig.tight_layout()
     return fig
 
-def plot_test(test_pred:dict, threshold:float):
+
+def plot_test(pred:dict, threshold:dict):
     '''Plots the health index for the test set.
-        Returns: tuple of fig objects (fig_h, fig_x, fig_z)
+        Returns: 
+            tuple of fig objects (fig_h, fig_x, fig_z)
     '''
-    h = test_pred['health_ind']
-    samples = np.arange(len(h))
+    fig_x = plt.figure(figsize=(15,12))
+    fig_z = plt.figure(figsize=(12,12))
+    fig_xrec = plt.figure(figsize=(15,12))
+    fig_z1z2 = plt.figure(figsize=(12,12)) # plots mu1 x mu2 
+    axz1z2 = fig_z1z2.add_subplot()
+    i = 1
+    for s in pred.keys():
+        h = pred[s]['health_ind'].squeeze()
+        samples = np.arange(len(h))
 
-    x = test_pred['x']
-    x_rec = test_pred['x_rec']
-    t_avg = test_pred['t_avg']
-    idx = np.arange(len(h))
-    idx_t_normal = idx[test_pred['y']==0]
-    idx_t_anom = idx[test_pred['y']>0]
-    mu = test_pred['mu']
-    stddev = test_pred['stddev']
+        # x = pred[s]['x']
+        # x_rec = pred[s]['x_rec']
+        t_avg = pred[s]['t']
+        idx = np.arange(len(h))
+        mu = pred[s]['mu']
+        stddev = pred[s]['stddev']
 
-    samples = np.arange(len(h))
-    ind_anom = h > threshold
-    ind_norm = h <= threshold
+        # ax = fig_x.add_subplot(2,2,i)
+        # ax.set_title(f'Sensor {4-int(s[1])}')
+        # ax.pcolormesh(samples, np.linspace(0,128,x.shape[-1]), x[:,0,:].T, cmap='coolwarm', rasterized=True)
+        # ax.set_xlim([0, samples[-1]])
+        # ax.set_xlabel('Sample')
+        # ax.set_ylabel('f (Hz)')
+        # fig_x.tight_layout()
 
-    fig_h = plt.figure(figsize=(20,6))
-    ax = fig_h.add_subplot()
-    ax.scatter(samples[ind_norm], h[ind_norm], c='turquoise')
-    ax.scatter(samples[ind_anom], h[ind_anom], c='lightcoral')
-    ax2 = ax.twinx()
-    ax2.plot(idx_t_normal, t_avg[idx_t_normal], c='k', alpha=0.5) 
-    ax2.plot(idx_t_anom, t_avg[idx_t_anom], c='k', alpha=0.5, linestyle='-.')    
-    ax.plot([],[],c='k', alpha=0.5)
-    ax.plot([],[],c='k', alpha=0.5, linestyle='-.')
-    ax.set_xlabel('Sample')
-    ax.set_ylabel('Health index')
-    ax2.set_ylabel('Average tension (N)')
-    ax.plot([0,samples[-1]], [threshold, threshold], linestyle='dashed', color='gray')
-    ax.legend(['Predicted as normal', 'Predicted as anomalous', 'Avg. tension: normal samples', 'Avg. tension: damaged samples', 'Threshold'],loc='lower right')
-    ax.set_xlim([0, samples[-1]])
-    fig_h.tight_layout()
-
-    fig_x = plt.figure(figsize=(12,12))
-    num_bands = x.shape[1]//8
-    # for each sensor and direction:
-    sens_dir = ['4Z','4Y','3Z','3Y','2Z','2Y','1Z','1Y']
-    for k in range(8):
-        ax = fig_x.add_subplot(4,2,k+1)
-        ax.set_title(f'Channel {sens_dir[k]}')
-        ax.pcolormesh(x[:,k*num_bands : (k+1)*num_bands].T, cmap='jet', rasterized=True)
-        ax.set_xlim([0, samples[-1]])
-        ax.set_xlabel('Sample')
-        ax.set_ylabel('WPT band')
-    fig_x.tight_layout()
-
-    fig_xrec = plt.figure(figsize=(12,12))
-    # for each sensor and direction:
-    sens_dir = ['4Z','4Y','3Z','3Y','2Z','2Y','1Z','1Y']
-    for k in range(8):
-        ax = fig_xrec.add_subplot(4,2,k+1)
-        ax.set_title(f'Channel {sens_dir[k]}')
-        ax.pcolormesh(x_rec[:,k*num_bands : (k+1)*num_bands].T, cmap='jet', rasterized=True)
-        ax.set_xlim([0, samples[-1]])
-        ax.set_xlabel('Sample')
-        ax.set_ylabel('WPT band')
-    fig_xrec.tight_layout()
-
-    fig_z = plt.figure(figsize=(10,4))
-    ax = fig_z.add_subplot()
-    cmap = matplotlib.cm.get_cmap('tab20')
-    num_z = mu.shape[1]
-    legends = []
-    for k in range(num_z):
-        ax.plot(mu[:,k], c=cmap(k/num_z))
-        ax2 = ax.twinx()
-        ax2.plot(t_avg, c='k', alpha=0.5)    
-        legends.append(f'$z_{{{k+1}}}$')
-    ax.legend(legends)
-    for k in range(num_z):
-        ax.fill_between(samples, mu[:,k] + 3*stddev[:,k], mu[:,k] - 3*stddev[:,k], color=cmap(k/num_z), alpha=0.5)
-    fig_z.tight_layout()
-
-    fig_ht = plt.figure(figsize=(5,5))
-    ax = fig_ht.add_subplot()
-    ax.scatter(t_avg, h, c='k', s=4)
-    ax.set_ylabel('Health index')
-    ax.set_xlabel('Average tension')    
-    fig_ht.tight_layout()
-
-    fig_box = plt.figure(figsize=(7,7))
-    ax = fig_box.add_subplot()
-    df = pd.DataFrame()
-    df['y'] = test_pred['y']
-    df['health_ind'] = test_pred['health_ind']
-    df['state'] = list(map(lambda x: str(x), test_pred['y']))
-    df['state'] = df['state'].astype('string')
-    sn.boxplot(
-        data = df,
-        y = 'state',
-        x = 'health_ind',
-        whis = [0,100],
-    )
-    sn.stripplot(
-        data = df,
-        x = 'health_ind',
-        y = 'state',
-        color = 'k',
-        size = 2,
-    )
-    plt.axvline(threshold, linestyle='--', color='gray')
-    plt.xlabel('Health index')
-    plt.ylabel('Damage state')
-    plt.tight_layout()
+        # ax = fig_xrec.add_subplot(2,2,i)
+        # ax.set_title(f'Sensor {4-int(s[1])}')
+        # ax.pcolormesh(samples, np.linspace(0,128,x_rec.shape[-1]), x_rec[:,0,:].T, cmap='coolwarm', rasterized=True)
+        # ax.set_xlim([0, samples[-1]])
+        # ax.set_xlabel('Sample')
+        # ax.set_ylabel('f (Hz)')
+        # fig_xrec.tight_layout()
+        
+        ax = fig_z.add_subplot(2,2,i)
+        cmap = matplotlib.cm.get_cmap('tab20')
+        num_z = mu.shape[1]
+        legends = []
+        for k in range(num_z):
+            ax.plot(mu[:,k], c=cmap(k/num_z))
+            ax2 = ax.twinx()
+            ax2.plot(t_avg, c='k', alpha=0.5)    
+            legends.append(f'$z_{{{k+1}}}$')
+        ax.legend(legends)
+        for k in range(num_z):
+            ax.fill_between(samples, mu[:,k] + 3*stddev[:,k], mu[:,k] - 3*stddev[:,k], color=cmap(k/num_z), alpha=0.5)
+        fig_z.tight_layout()
+        axz1z2.scatter(mu[:,0], mu[:,1], c=t_avg, cmap="coolwarm", label=f"Sensor {4-int(s[1])}", marker=["o","x","d","s"][i-1])
     
+        i += 1
+    ax.legend()
+
     figs = {
-        'fig_h':fig_h,
         'fig_x':fig_x,
         'fig_z':fig_z,
-        'fig_ht':fig_ht,
         'fig_xrec':fig_xrec,
-        'fig_box':fig_box
+        'fig_z1z2': fig_z1z2
     }
     return figs
+
+
 
 def plot_test_dmg(test_pred:dict, pca=None):
     '''Plots the health index for the test set.
@@ -717,7 +845,6 @@ def plot_test_dmg(test_pred:dict, pca=None):
     return figs, pca, n_90
 
 
-
 def get_threshold_hist(train_pred:dict, val_pred:dict, dmg_pred:dict) -> tuple:
     '''Plots the data histogram and the computed beta PDF.
     Returns:
@@ -762,44 +889,58 @@ def get_threshold_hist(train_pred:dict, val_pred:dict, dmg_pred:dict) -> tuple:
     fig.tight_layout()
     return fig, params, threshold
 
-def get_threshold_hist_ds4(train_pred:dict, val_pred:dict) -> tuple:
-    '''Plots the data histogram and the computed beta PDF.
-    Returns:
-        (fig, params)
-    '''
-    size = val_pred['health_ind'].max() * 3
-    step = size / 1000
-    x = np.arange(step,size,step)
-    dist = getattr(scipy.stats, 'beta')
-    params = dist.fit(train_pred['health_ind'])
-    arg = params[:-2]
-    loc = params[-2]
-    scale = params[-1]
-    if arg:
-        pdf_fitted = dist.pdf(x, *arg, loc=loc, scale=scale)
-        cdf_fitted = dist.cdf(x, *arg, loc=loc, scale=scale)
-        threshold = x[np.argwhere(cdf_fitted >= 0.999)[0]]
 
-    fig = plt.figure(figsize=(12,5))
-    ax = fig.add_subplot()
-    histtype = 'bar'
-    edgecolor = 'gray'
-    alpha = 0.75
-    ax.hist(train_pred['health_ind'], density=True, bins=30, color='royalblue', histtype=histtype, alpha=alpha, edgecolor=edgecolor)
-    ax.hist(val_pred['health_ind'], density=True, bins=30, color='mediumseagreen', histtype=histtype, alpha=alpha, edgecolor=edgecolor)
-    ax.plot(x, pdf_fitted, c='k')
-    
-    legend = ["Normal", "Normal PDF", "Validation"]
-    #for label in np.unique(dmg_pred["y"]):
-    #    dmg = dmg_pred['health_ind'][dmg_pred['y']==label]
-    #    ax.hist(dmg, density=True, bins=30, histtype=histtype, alpha=alpha, edgecolor=edgecolor)
-    #    legend.append(f"Damage {label}")
-    ax.legend(legend, loc='upper right')
-    ax.axvline(threshold, linestyle='--', color='gray')
-    ax.set_xlabel('Health index')
+def get_threshold_hist_ds4(train_pred:dict, val_pred:dict) -> tuple:
+    '''Plots the data histogram and the computed lognormal PDF.
+    Args:
+        train_pred: predictions of the training dataset
+        val_pred: predictinos of the validation dataset
+    Returns:
+        fig: figure containing error histograms and the estimated distribution for each sensor
+        parameters: dict containing the distribution pararmeters for each sensor
+        threshold: dict containing the thresholds for each sensor
+    '''
+   
+    # using a Beta distribution to model the error PDF
+    parameters = {}
+    thresholds = {}
+    for s in val_pred.keys():
+        dist = getattr(scipy.stats, 'lognorm')
+        params = dist.fit(val_pred[s]['health_ind'])
+        parameters[s] = params
+        arg = params[:-2]
+        loc = params[-2]
+        scale = params[-1]
+        if arg:
+            size = val_pred[s]['health_ind'].max() * 3
+            step = size / 1000
+            x = np.arange(step,size,step)
+            pdf_fitted = dist.pdf(x, *arg, loc=loc, scale=scale)
+            cdf_fitted = dist.cdf(x, *arg, loc=loc, scale=scale)
+            thresholds[s] = x[np.argwhere(cdf_fitted >= 0.999)[0]]
+
+    # figure
+    fig = plt.figure(figsize=(20,10))
+    i = 1
+    for s in val_pred.keys():
+        ax = fig.add_subplot(2,2,i)
+        ax.set_title(f'Sensor {4-int(s[1])}')
+        i += 1
+        histtype = 'bar'
+        edgecolor = 'gray'
+        alpha = 0.75
+        ax.hist(train_pred[s]['health_ind'], density=True, bins=30, color='royalblue', histtype=histtype, alpha=alpha, edgecolor=edgecolor)
+        ax.hist(val_pred[s]['health_ind'], density=True, bins=30, color='mediumseagreen', histtype=histtype, alpha=alpha, edgecolor=edgecolor)
+        ax.plot(x, pdf_fitted, c='k')
+        
+        legend = ["Normal", "Normality PDF", "Validation"]
+        ax.legend(legend, loc='upper right')
+        ax.axvline(thresholds[s], linestyle='--', color='gray')
+        ax.set_xlabel('Health index')
     fig.tight_layout()
 
-    return fig, params, threshold
+    return fig, parameters, thresholds
+
 
 def plot_hist(normal_pred:dict, dmg_pred:dict, params:tuple, threshold:float) -> tuple:
     '''Plots the data histogram and the PDF.
@@ -844,80 +985,69 @@ def plot_hist(normal_pred:dict, dmg_pred:dict, params:tuple, threshold:float) ->
     fig.tight_layout()
     return fig
 
-def plot_hist_ds4(pred:dict, params:tuple, threshold:float) -> tuple:
+def plot_hist_ds4(pred:dict, parameters:tuple, threshold:float) -> tuple:
     '''Plots the data histogram and the PDF.
     Args:
-        normal_pred: dict containing normal data
-        dmg_pred: dict containing damaged data
-        params: parameters of the adjusted beta PDF
-        threshold: threshold for anomaly detection
+        pred: dict containing damaged (or normal) data
+        parameters: dict containing PDF parameters for each sensor
+        threshold: dict containing anomaly detection threshold for each sensor
     Returns:
         fig
     '''
-    size = pred['health_ind'].max() * 1.2
-    step = size / 1000
-    x = np.arange(step,size,step)
-    dist = getattr(scipy.stats, 'beta')
-    arg = params[:-2]
-    loc = params[-2]
-    scale = params[-1]
-    pdf_fitted = dist.pdf(x, *arg, loc=loc, scale=scale)
 
-    fig = plt.figure(figsize=(12,5))
-    ax = fig.add_subplot()
-    histtype = 'bar'
-    edgecolor = 'gray'
-    alpha = 0.75
-    # ax.hist(
-    #     normal_pred['health_ind'],
-    #     density=True,
-    #     bins=30,
-    #     color='royalblue',
-    #     histtype=histtype,
-    #     alpha=alpha,
-    #     edgecolor=edgecolor,
-    # )
-    ax.plot(x, pdf_fitted, c='k')
-    
-    legend = ["Normal PDF"]
-    for label in np.unique(pred["y"]):
-        dmg = pred['health_ind'][pred['y']==label]
-        ax.hist(
-            dmg,
-            density=True,
-            bins=None,
-            histtype=histtype,
-            alpha=alpha,
-            edgecolor=edgecolor
-        )
-        legend.append(f"State {label}")
-    
-    ax.legend(legend, loc='upper right')
-    ax.axvline(threshold, linestyle='--', color='gray')
-    ax.set_xlabel('Health index')
+    fig = plt.figure(figsize=(15,10))
+    i = 1
+    for s in pred.keys():
+        size = pred[s]['health_ind'].max() * 1.2
+        step = size / 1000
+        x = np.arange(step, size, step)
+        dist = getattr(scipy.stats, 'lognorm')
+        arg = parameters[s][:-2]
+        loc = parameters[s][-2]
+        scale = parameters[s][-1]
+        pdf_fitted = dist.pdf(x, *arg, loc=loc, scale=scale)
+
+        ax1 = fig.add_subplot(2,2,i)
+        ax1.set_title(f'Sensor {4-int(s[1])}')
+        ax1.set_xlabel("Health index")
+        i += 1
+        ax1.plot(x, pdf_fitted, c='k')
+        legend = ["Normal PDF"]
+        ax1.legend(legend, loc='upper right')
+        ax = ax1.twinx()
+        ax.scatter(pred[s]["health_ind"], pred[s]["t"], c=pred[s]["t"])
+        ax.set_ylabel("Tension (N)")
+        ax.axvline(threshold[s], linestyle='--', color='gray')
+        
+
     fig.tight_layout()
 
     return fig
 
 class Dataset():
     def __init__(self, x, y, t, transform=None):
-        self.x = x
+        self.x = x # (n_samples, n_sensors, n_channels, n_freq)
         self.y = y
         self.t = t
+        self.n_samples, self.n_sensors, self.n_channels, self.n_freq = self.x.shape
         self.transform = transform
 
     def __len__(self):
-        return len(self.y)
+        '''Multiple sensors are used as different samples.'''
+        return self.x.shape[0] * self.x.shape[1]
 
     def __getitem__(self,idx):
-        x = self.x[idx]
-        y = self.y[idx]
-        t = self.t[idx]
+        s = idx // self.n_samples
+        i = idx - (self.n_samples*s)
+
+        x = self.x[i,s]
+        y = self.y[i]
+        t = self.t[i]
         x = torch.Tensor(x)
 
         if self.transform is not None:
             x = self.transform(x).float()
-        return x,y,t
+        return x,s,t
 
 
 

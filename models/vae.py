@@ -13,10 +13,16 @@ class PLModel(LightningModule):
             num_resets=hparams['num_resets']           
         )
 
-        if hparams['model'] == 'mlp':
+        if hparams['model'] == 'mlp': #not used
             self.model = VAE(latent_dim=hparams['latent_dim'], input_dim=hparams['input_dim'])
+        
         elif hparams['model'] == 'cnn':
-            self.model = VAECNN(latent_dim=hparams['latent_dim'], input_dim=hparams['input_dim'])
+            self.model = VAECNN(
+                latent_dim = hparams['latent_dim'],
+                freq_dim = hparams['freq_dim'],
+                in_channels = hparams["n_channels"],
+                normalization = hparams["normalization"]
+                )
 
         if normalization is not None:
             self.model.save_norm(mu=normalization['mu'], std=normalization['std'])
@@ -95,8 +101,8 @@ class DownBlock(torch.nn.Module):
     '''Basic downsampling block'''
     def __init__(self, in_channels:int, kernel_size:int, residual:bool=True, batch_norm:bool=True):
         super().__init__()
-        self.conv1 = torch.nn.Conv1d(in_channels, in_channels, kernel_size, padding=kernel_size-2)
-        self.conv2 = torch.nn.Conv1d(in_channels, in_channels, kernel_size, padding=kernel_size-2)
+        self.conv1 = torch.nn.Conv1d(in_channels, in_channels, kernel_size, padding=(kernel_size-1)//2)
+        self.conv2 = torch.nn.Conv1d(in_channels, in_channels, kernel_size, padding=(kernel_size-1)//2)
         self.bn1 = torch.nn.BatchNorm1d(in_channels)
         self.bn2 = torch.nn.BatchNorm1d(in_channels)
         self.residual = residual
@@ -105,12 +111,12 @@ class DownBlock(torch.nn.Module):
     def forward(self, x) -> torch.Tensor:
         x1 = self.conv1(x)
         x1 = self.bn1(x1)
-        x1 = torch.nn.functional.relu(x1)
+        x1 = torch.nn.functional.leaky_relu(x1)
         x1 = self.conv2(x1)
         x1 = self.bn2(x1)
         if self.residual:
             x1 += x
-        x1 = torch.nn.functional.relu(x1)
+        x1 = torch.nn.functional.leaky_relu(x1)
         x1 = self.down(x1)
         return x1
 
@@ -118,8 +124,8 @@ class UpBlock(torch.nn.Module):
     '''Basic upsampling block'''
     def __init__(self, in_channels:int, kernel_size:int, residual:bool=True, batch_norm:bool=True):
         super().__init__()
-        self.conv1 = torch.nn.Conv1d(in_channels, in_channels, kernel_size, padding=kernel_size-2)
-        self.conv2 = torch.nn.Conv1d(in_channels, in_channels, kernel_size, padding=kernel_size-2)
+        self.conv1 = torch.nn.Conv1d(in_channels, in_channels, kernel_size, padding=(kernel_size-1)//2)
+        self.conv2 = torch.nn.Conv1d(in_channels, in_channels, kernel_size, padding=(kernel_size-1)//2)
         self.bn1 = torch.nn.BatchNorm1d(in_channels)
         self.bn2 = torch.nn.BatchNorm1d(in_channels)
         self.residual = residual
@@ -128,12 +134,12 @@ class UpBlock(torch.nn.Module):
     def forward(self, x:torch.Tensor) -> torch.Tensor:
         x1 = self.conv1(x)
         x1 = self.bn1(x1)
-        x1 = torch.nn.functional.relu(x1)
+        x1 = torch.nn.functional.leaky_relu(x1)
         x1 = self.conv2(x1)
         x1 = self.bn2(x1)
         if self.residual:
             x1 += x
-        x1 = torch.nn.functional.relu(x1)
+        x1 = torch.nn.functional.leaky_relu(x1)
         x1 = self.upconv(x1)
         return x1
 
@@ -143,7 +149,7 @@ class ConvEncoder(torch.nn.Module):
         super().__init__()
         self.latent_dim = latent_dim
         self.layers = torch.nn.Sequential(
-            torch.nn.Conv1d(in_channels=in_channels, out_channels=hidden_channels, kernel_size=kernel_size, padding=kernel_size-2), #1024
+            torch.nn.Conv1d(in_channels=in_channels, out_channels=hidden_channels, kernel_size=kernel_size, padding=(kernel_size-1)//2), #1024
             DownBlock(in_channels=hidden_channels, kernel_size=kernel_size), #512
             DownBlock(in_channels=hidden_channels, kernel_size=kernel_size), #256
             DownBlock(in_channels=hidden_channels, kernel_size=kernel_size), #128
@@ -170,7 +176,7 @@ class ConvDecoder(torch.nn.Module):
             UpBlock(in_channels=hidden_channels, kernel_size=kernel_size), #128
             UpBlock(in_channels=hidden_channels, kernel_size=kernel_size), #256
             UpBlock(in_channels=hidden_channels, kernel_size=kernel_size), #1024
-            torch.nn.Conv1d(hidden_channels, out_channels, kernel_size=kernel_size, padding=kernel_size-2),
+            torch.nn.Conv1d(hidden_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size-1)//2),
         )
         
     def forward(self,x:torch.Tensor) -> torch.Tensor:
@@ -245,7 +251,7 @@ class VAE(torch.nn.Module):
         else:
             return x_norm
 
-class VAECNN(torch.nn.Module):
+class OLD_VAECNN(torch.nn.Module):
     def __init__(self, latent_dim:int, input_dim:int):
         '''VAE model with 1D convolutional layers and ReLU activation.
         Data input must have dimensions (n_batch, in_channels, freq_dim).
@@ -310,45 +316,29 @@ class VAECNN(torch.nn.Module):
         return mu, logvar, x_rec
 
 
-
-class VAERec(torch.nn.Module):
-    '''Recurrent VAE model with linear layers and ReLU activation.
-    '''
-    def __init__(self, latent_dim:int, input_dim:int):
-        super(VAERec, self).__init__()
+class VAECNN(torch.nn.Module):
+    def __init__(self, latent_dim:int, in_channels:int, freq_dim:int, normalization:str):
+        '''VAE model with 1D convolutional layers and ReLU activation.
+        Data input must have dimensions (n_batch, in_channels, freq_dim).
+        Args:
+            latent_dim: size of latent vector
+            freq_dim: size of each PSD
+            in_channels: number of input channels
+            normalization: "min-max" or "z-score", defines the output layer
+        Fixed parameters:
+            kernel_size = 5
+            hidden_channels = 64
+        '''
+        super(VAECNN, self).__init__()
         self.latent_dim = latent_dim
-        self.input_dim = input_dim
-        self.normalization = None
-
-        self.z_prev = torch.zeros((1,self.latent_dim))
-
-        self.encoder = torch.nn.Sequential(
-            torch.nn.Linear(input_dim, int(3*input_dim/4)),
-            torch.nn.ReLU(),
-            torch.nn.Linear(int(3*input_dim/4), int(2*input_dim/4)),
-            torch.nn.ReLU(),
-            torch.nn.Linear(int(2*input_dim/4), int(2*input_dim/4)),
-            torch.nn.ReLU(),
-            torch.nn.Linear(int(2*input_dim/4), 2*latent_dim),
-        )
-
-        self.w_z = torch.nn.Sequential(
-            torch.nn.Linear(latent_dim, 2*latent_dim),
-        )
-
-        self.w_x = torch.nn.Sequential(
-            torch.nn.Linear(2*latent_dim, 2*latent_dim),
-        )
-
-        self.decoder = torch.nn.Sequential(
-            torch.nn.Linear(latent_dim, int(2*input_dim/4)),
-            torch.nn.ReLU(),
-            torch.nn.Linear(int(2*input_dim/4), int(2*input_dim/4)),
-            torch.nn.ReLU(),
-            torch.nn.Linear(int(2*input_dim/4), int(3*input_dim/4)),
-            torch.nn.ReLU(),
-            torch.nn.Linear(int(3*input_dim/4), input_dim),
-        )
+        self.freq_dim = freq_dim
+        self.in_channels = in_channels
+        self.normalization = normalization
+        
+        kernel_size = 5
+        hidden_channels = 64
+        self.encoder = ConvEncoder(self.freq_dim, latent_dim, self.in_channels, hidden_channels, kernel_size)
+        self.decoder = ConvDecoder(self.freq_dim, latent_dim, self.in_channels, hidden_channels, kernel_size)
 
     def save_norm(self, mu, std):
         ''' Saves the z-score normalization used during training.
@@ -359,7 +349,6 @@ class VAERec(torch.nn.Module):
 
     def encode(self, x):
         x = self.encoder(x)
-        x = self.w_x(x) + self.w_z(self.z_prev.to(x.device))
         mu, logvar = x[:,0:self.latent_dim], x[:,self.latent_dim:]
         return mu, logvar
     
@@ -367,43 +356,17 @@ class VAERec(torch.nn.Module):
         x = self.decoder(x)
         return x
 
-    def set_z0(self, z=None):
-        if z==None:
-            self.z_prev = torch.zeros((1,self.latent_dim))
-        else:
-            self.z_prev = torch.Tensor(z)
-
     def sample(self, mu, logvar):
         std = torch.exp(0.5*logvar)
         eps = torch.randn_like(std)
         return (eps*std) + mu
 
     def forward(self, x):
-        mu_list = []
-        logvar_list = []
-        x_rec_list = []
-        for xi in x:
-            mu, logvar = self.encode(xi)
-            z = self.sample(mu, logvar)
-            x_rec = self.decode(z)
-            self.z_prev = z
-            mu_list.append(mu)
-            logvar_list.append(mu)
-            x_rec_list.append(x_rec)
-        return torch.vstack(mu_list), torch.vstack(logvar_list), torch.vstack(x_rec_list)  
+        mu, logvar = self.encode(x)
+        z = self.sample(mu, logvar)
+        x_rec = self.decode(z)
+        
+        if self.normalization == "min-max":
+            x_rec = torch.sigmoid(x_rec)
 
-    def normalize(self, x):
-        if self.normalization is not None:
-            return (x - self.mu) / self.std
-        else:
-            return x
-
-    def unnormalize(self, x_norm):
-        if self.normalization is not None:
-            return (x_norm * self.std) + self.mu
-        else:
-            return x_norm
-
-
-
-#
+        return mu, logvar, x_rec

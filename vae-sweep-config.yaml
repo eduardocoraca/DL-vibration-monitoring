@@ -9,6 +9,8 @@ metric:
   goal: maximize
 
 parameters:
+  channels:
+    values: ["comp"]
   batch_size:
     values: [64]
   beta:

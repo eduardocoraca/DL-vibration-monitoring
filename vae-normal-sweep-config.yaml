@@ -1,0 +1,34 @@
+### training 
+
+program: main.py
+
+method: grid
+
+metric:
+  name: F1_test
+  goal: maximize
+
+parameters:
+  channels:
+    values: ["comp"]
+  batch_size:
+    values: [64]
+  beta:
+    values: [1]
+  epochs:
+    values: [1]
+  learning_rate:
+    values: [5e-4]
+  ### VAE Loss
+  epoch_resets:
+    values: [25]
+  num_resets:
+    values: [1]
+  ### VAE Model
+  latent_dim:
+    values: [2]
+  model:
+    values: ['cnn']
+  ### normalization
+  normalization:
+    values: ['min-max']

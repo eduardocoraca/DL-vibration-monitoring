@@ -32,19 +32,19 @@ def train(config=None):
         path_data = "data/"
 
         #data_test = load_to_memory(path=path_data + "data_3_raw.d", level=hparams['level'], wavelet=hparams['wavelet'])
-        data_test = load_preprocessed(filename=path_data + "data_3", level=hparams['level'], wavelet=hparams['wavelet'])
+        data_test = load_preprocessed(filename=path_data + "data_3", level=hparams['level'], wavelet=hparams['wavelet'], channels=hparams['channels'])
         data_test_norm = split_by_label(data=data_test, label=[0])
         data_test_dmg = split_by_label(data=data_test, not_label=[0])
         gc.collect()
 
         #data_train = load_to_memory(path=path_data + "data_1_raw.d", level=hparams['level'], wavelet=hparams['wavelet'])
-        data_train = load_preprocessed(filename=path_data + "data_1", level=hparams['level'], wavelet=hparams['wavelet'])
+        data_train = load_preprocessed(filename=path_data + "data_1", level=hparams['level'], wavelet=hparams['wavelet'], channels=hparams['channels'])
         data_train_norm = split_by_label(data=data_train, label=[0])
         data_train_dmg = split_by_label(data=data_train, not_label=[0])
         gc.collect()
 
         #data_val = load_to_memory(path=path_data + "data_2_raw.d", level=hparams['level'], wavelet=hparams['wavelet'])
-        data_val = load_preprocessed(filename=path_data + "data_2", level=hparams['level'], wavelet=hparams['wavelet'])
+        data_val = load_preprocessed(filename=path_data + "data_2", level=hparams['level'], wavelet=hparams['wavelet'], channels=hparams['channels'])
         data_val_norm = split_by_label(data=data_val, label=[0])
         gc.collect()
 
@@ -238,8 +238,17 @@ def train(config=None):
         gc.collect()
         plt.close('all')
 
-
-def train_ds4(config=None):
+def train_ds4_normal(config=None):
+    ''' Executes the training and evaluation procedure for the normality models of DS4. 
+    Vibration data from each sensor is used to train a single CNN-based VAE, which is then applied used
+    as a data compression tool. The average reconstruction error of each sensor is used a health indicator.
+    Dataset splits:
+        - data_train_norm: used for training the VAE
+        - data_val_norm: used for modelling the reconstruction error
+        - data_test_norm: used for evaluating the anomaly detector (negative examples)
+        - data_dmg_all: used for evaluating the anomaly detector (positive examples)
+    Models and results are logged with Wandb.
+    '''
     with wandb.init(config=config):
         config = wandb.config
 
@@ -250,20 +259,26 @@ def train_ds4(config=None):
             'epoch_resets': config.epoch_resets,
             'latent_dim': config.latent_dim,
             'learning_rate': config.learning_rate,
-            'level': config.level,
             'model': config.model,
             'normalization': config.normalization,
             'num_resets': config.num_resets,
-            'wavelet': config.wavelet,
+            'channels': config.channels,
         }
 
         path_data = "data/"
 
         #data_test = load_to_memory(path=path_data + "data_3_raw.d", level=hparams['level'], wavelet=hparams['wavelet'])
-        data_all = load_preprocessed(
-            filename=path_data + "data_4",
-            level=hparams['level'],
-            wavelet=hparams['wavelet']
+        
+        # data_all = load_preprocessed(
+        #     filename=path_data + "data_4",
+        #     level=hparams['level'],
+        #     wavelet=hparams['wavelet'],
+        #     channels=hparams['channels']
+        # )
+
+        data_all = load_preprocessed_psd(
+            filename=path_data + "data_4_psd",
+            channels=hparams['channels']
         )
 
         data_split = split_by_meta(
@@ -287,7 +302,8 @@ def train_ds4(config=None):
 
         gc.collect()
 
-        hparams["input_dim"] = data_train_norm["features"].shape[1]
+        hparams["freq_dim"] = data_train_norm["features"].shape[-1]
+        hparams["n_channels"] = data_train_norm["features"].shape[-2]
 
         ### dataset and dataloader
         if hparams['normalization'] == "min-max":
@@ -315,13 +331,6 @@ def train_ds4(config=None):
             t=data_train_norm['tensions']
         )
 
-        dmg_1_dataset = Dataset(
-            x=data_dmg_1["features"],
-            y=data_dmg_1["y"],
-            transform=transform,
-            t=data_dmg_1['tensions']
-        )
-
         val_dataset_norm = Dataset(
             x=data_val_norm["features"],
             y=data_val_norm["y"],
@@ -336,11 +345,11 @@ def train_ds4(config=None):
             transform=transform
         )
 
-        dmg_2_dataset = Dataset(
-            x=data_dmg_2["features"],
-            y=data_dmg_2["y"],
-            t=data_dmg_2["tensions"],
-            transform=transform
+        dmg_dataset = Dataset(
+            x=data_dmg_all["features"],
+            y=data_dmg_all["y"],
+            transform=transform,
+            t=data_dmg_all['tensions']
         )
 
         all_dataset = Dataset(
@@ -366,12 +375,8 @@ def train_ds4(config=None):
             test_dataset_norm, batch_size=hparams['batch_size'], shuffle=False
         )
 
-        dmg_1_dataloader = DataLoader(
-            dmg_1_dataset, batch_size=hparams['batch_size'], shuffle=False
-        )
-
-        dmg_2_dataloader = DataLoader(
-            dmg_2_dataset, batch_size=hparams['batch_size'], shuffle=False
+        dmg_dataloader = DataLoader(
+            dmg_dataset, batch_size=hparams['batch_size'], shuffle=False
         )
 
         all_dataloader = DataLoader(
@@ -395,34 +400,27 @@ def train_ds4(config=None):
 
         ### making predictions
         train_pred = predict(dataloader=train_dataloader_noshuffle_norm, model=model)
-        dmg_1_pred = predict(dataloader=dmg_1_dataloader, model=model)
         val_pred = predict(dataloader=val_dataloader_norm, model=model)
         test_pred = predict(dataloader=test_dataloader_norm, model=model)
-        dmg_2_pred = predict(dataloader=dmg_2_dataloader, model=model)
+        dmg_pred = predict(dataloader=dmg_dataloader, model=model)
         all_pred = predict(dataloader=all_dataloader, model=model)
 
         ### threshold
-        # threshold = get_threshold(predictions=(train_pred, val_pred), model=model)
-        fig_hist_trainval, params, threshold = get_threshold_hist_ds4(
+
+        fig_hist_trainval, parameters, threshold = get_threshold_hist_ds4(
             train_pred=train_pred,
             val_pred=val_pred,
         )
 
         fig_hist_test = plot_hist_ds4(
             pred=test_pred,
-            params=params,
+            parameters=parameters,
             threshold=threshold
         )
 
-        fig_hist_dmg1 = plot_hist_ds4(
-            pred=dmg_1_pred,
-            params=params,
-            threshold=threshold
-        )
-
-        fig_hist_dmg2 = plot_hist_ds4(
-            pred=dmg_2_pred,
-            params=params,
+        fig_hist_dmg = plot_hist_ds4(
+            pred=dmg_pred,
+            parameters=parameters,
             threshold=threshold
         )
 
@@ -430,55 +428,48 @@ def train_ds4(config=None):
             {
                 "Train/Val Histograms": wandb.Image(fig_hist_trainval),
                 "Test Histograms": wandb.Image(fig_hist_test),
-                "Damage 1 Histograms": wandb.Image(fig_hist_dmg1),
-                "Damage 2 Histograms": wandb.Image(fig_hist_dmg2),
+                "Damage Histograms": wandb.Image(fig_hist_dmg),
             }
         )
 
-        ### evaluate on each dataset
+        plt.close('all')
+        
+        ### evaluate on each dataset & sensor
         TN_val, FP_val = eval_anomaly(predictions=val_pred, mode='normal', threshold=threshold)
         TN_test, FP_test = eval_anomaly(predictions=test_pred, mode='normal', threshold=threshold)
-        TP_dmg1, FN_dmg1 = eval_anomaly(predictions=dmg_1_pred, mode='damage', threshold=threshold)
-        TP_dmg2, FN_dmg2 = eval_anomaly(predictions=dmg_2_pred, mode='damage', threshold=threshold)
+        TP_dmg, FN_dmg = eval_anomaly(predictions=dmg_pred, mode='damage', threshold=threshold)
         
-        TNR_val = TN_val / (TN_val + FP_val + 0.001)
-        TNR_test = TN_test / (TN_test + FP_test + 0.001)
-        TPR_dmg1 = TP_dmg1 / (TP_dmg1 + FN_dmg1 + 0.001)
-        TPR_dmg2 = TP_dmg2 / (TP_dmg2 + FN_dmg2 + 0.001)
+        TNR_val = {}
+        TNR_test = {}
+        TPR_dmg = {}
+        for s in TN_val.keys():
+            TNR_val[s] = TN_val[s] / (TN_val[s] + FP_val[s] + 0.001)
+            TNR_test[s] = TN_test[s] / (TN_test[s] + FP_test[s] + 0.001)
+            TPR_dmg[s] = TP_dmg[s] / (TP_dmg[s] + FN_dmg[s] + 0.001)
    
-        wandb.log(
-            {
-                'TNR_val': TNR_val,
-                'TNR_test': TNR_test,
-                'TPR_dmg1': TPR_dmg1,
-                'TPR_dmg2': TPR_dmg2,
-                'Threshold': threshold,
-            }
-        )
+            wandb.log(
+                {
+                    f'TNR_val_s{4-s[1]}': TNR_val[s],
+                    f'TNR_test_s{4-s[1]}': TNR_test[s],
+                    f'TPR_dmg_s{4-s[1]}': TPR_dmg[s],
+                    f'Threshold_s{4-s[1]}': threshold[s],
+                }
+            )
 
         ### plotting health index
-        fig_train = plot_train_val(train_pred, val_pred, threshold)
-        wandb_fig_train = wandb.Image(fig_train)
-        wandb.log({"Train-Val Health Index": wandb_fig_train})
-        del fig_train
 
         figs = plot_test(all_pred, threshold)
 
-        wandb_fig_h = wandb.Image(figs['fig_h'])
-        wandb_fig_x = wandb.Image(figs['fig_x'])
+        #wandb_fig_x = wandb.Image(figs['fig_x'])
         wandb_fig_z = wandb.Image(figs['fig_z'])
-        wandb_fig_ht = wandb.Image(figs['fig_ht'])
-        wandb_fig_xrec = wandb.Image(figs['fig_xrec'])
-        wandb_fig_box = wandb.Image(figs['fig_box'])
+        wandb_fig_z1z2 = wandb.Image(figs['fig_z1z2'])
+        #wandb_fig_xrec = wandb.Image(figs['fig_xrec'])
         
         wandb.log(
             {
-                "Health Index": wandb_fig_h,
-                "Input Data": wandb_fig_x,
-                "Reconstructed Data": wandb_fig_xrec,
+                #"Input Data": wandb_fig_x,
+                #"Reconstructed Data": wandb_fig_xrec,
                 "Latent Variables": wandb_fig_z,
-                "Health Index x Average Tension": wandb_fig_ht,
-                "Health Index Whole Dataset": wandb_fig_box,
             }
         )
         gc.collect()
@@ -617,7 +608,7 @@ def train_ds4_dmg(config=None):
         wandb.log(
             {
                 "Input Data D2": wandb_fig_x_dmg_2,
-                "Reconstructed Data D2": wandb_fig_xrec_dmg_2,
+                #"Reconstructed Data D2": wandb_fig_xrec_dmg_2,
                 "Latent Variables D2": wandb_fig_z_dmg_2,
                 "mu1 x mu2 D2": wandb_fig_pca_dmg_2,
                 "Cumulative Sum D2": wandb_fig_cumsum_dmg_2,
