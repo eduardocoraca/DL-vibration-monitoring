@@ -326,8 +326,8 @@ class VAECNN(torch.nn.Module):
             in_channels: number of input channels
             normalization: "min-max" or "z-score", defines the output layer
         Fixed parameters:
-            kernel_size = 5
-            hidden_channels = 64
+            kernel_size = 3
+            hidden_channels = 32
         '''
         super(VAECNN, self).__init__()
         self.latent_dim = latent_dim
@@ -335,8 +335,8 @@ class VAECNN(torch.nn.Module):
         self.in_channels = in_channels
         self.normalization = normalization
         
-        kernel_size = 5
-        hidden_channels = 64
+        kernel_size = 3
+        hidden_channels = 32
         self.encoder = ConvEncoder(self.freq_dim, latent_dim, self.in_channels, hidden_channels, kernel_size)
         self.decoder = ConvDecoder(self.freq_dim, latent_dim, self.in_channels, hidden_channels, kernel_size)
 

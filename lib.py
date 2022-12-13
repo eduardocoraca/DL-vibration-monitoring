@@ -690,15 +690,16 @@ def OLD_plot_train_val(train_pred:dict, val_pred:dict, threshold:float):
     return fig
 
 
-def plot_test(pred:dict, threshold:dict):
+def plot_test(pred:dict):
     '''Plots the health index for the test set.
-        Returns: 
-            tuple of fig objects (fig_h, fig_x, fig_z)
+    Returns: 
+        dict of fig objects
     '''
     fig_x = plt.figure(figsize=(15,12))
-    fig_z = plt.figure(figsize=(12,12))
+    fig_z = plt.figure(figsize=(15,12))
     fig_xrec = plt.figure(figsize=(15,12))
-    fig_z1z2 = plt.figure(figsize=(12,12)) # plots mu1 x mu2 
+    fig_z1z2 = plt.figure(figsize=(15,12)) # plots mu1 x mu2 
+    fig_z1z2_s = plt.figure(figsize=(15,12)) # plots mu1 x mu2 for each sensor
     axz1z2 = fig_z1z2.add_subplot()
     i = 1
     for s in pred.keys():
@@ -741,16 +742,23 @@ def plot_test(pred:dict, threshold:dict):
         for k in range(num_z):
             ax.fill_between(samples, mu[:,k] + 3*stddev[:,k], mu[:,k] - 3*stddev[:,k], color=cmap(k/num_z), alpha=0.5)
         fig_z.tight_layout()
+
+        ax = fig_z1z2_s.add_subplot(2,2,i) 
+        cm = ax.scatter(mu[:,0], mu[:,1], c=t_avg, cmap="coolwarm", label=f"Sensor {4-int(s[1])}", marker=["o","x","d","s"][i-1])
+        ax.legend()
+        fig_z1z2_s.colorbar(cm)
+
         axz1z2.scatter(mu[:,0], mu[:,1], c=t_avg, cmap="coolwarm", label=f"Sensor {4-int(s[1])}", marker=["o","x","d","s"][i-1])
     
         i += 1
-    ax.legend()
+    axz1z2.legend()
 
     figs = {
         'fig_x':fig_x,
         'fig_z':fig_z,
         'fig_xrec':fig_xrec,
-        'fig_z1z2': fig_z1z2
+        'fig_z1z2': fig_z1z2,
+        'fig_z1z2_s': fig_z1z2_s
     }
     return figs
 
