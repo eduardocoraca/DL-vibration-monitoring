@@ -32,4 +32,4 @@ parameters:
     values: ['cnn']
   ### normalization
   normalization:
-    values: ['z-score']
+    values: ['db-z-score']
