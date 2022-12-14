@@ -12,10 +12,10 @@ parameters:
   channels:
     values: ["comp"]
   batch_size:
-    values: [64]
+    values: [128]
   beta:
-    #values: [0.01,0.1,1,10,50,100]
-    values: [1,15,20,25,30,35]
+    values: [0.01,0.1,1,10]
+    #values: [1,15,20,25,30,35]
   epochs:
     values: [80]
   learning_rate:
@@ -26,6 +26,8 @@ parameters:
   num_resets:
     values: [0]
   ### VAE Model
+  hidden_channels:
+    values: [64]
   latent_dim:
     values: [2]
   model:

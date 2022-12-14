@@ -21,7 +21,8 @@ class PLModel(LightningModule):
                 latent_dim = hparams['latent_dim'],
                 freq_dim = hparams['freq_dim'],
                 in_channels = hparams["n_channels"],
-                normalization = hparams["normalization"]
+                normalization = hparams["normalization"],
+                hidden_channels = hparams["hidden_channels"]
                 )
 
         if normalization is not None:
@@ -317,7 +318,7 @@ class OLD_VAECNN(torch.nn.Module):
 
 
 class VAECNN(torch.nn.Module):
-    def __init__(self, latent_dim:int, in_channels:int, freq_dim:int, normalization:str):
+    def __init__(self, latent_dim:int, in_channels:int, freq_dim:int, normalization:str, hidden_channels:int):
         '''VAE model with 1D convolutional layers and ReLU activation.
         Data input must have dimensions (n_batch, in_channels, freq_dim).
         Args:
@@ -327,7 +328,6 @@ class VAECNN(torch.nn.Module):
             normalization: "min-max" or "z-score", defines the output layer
         Fixed parameters:
             kernel_size = 3
-            hidden_channels = 32
         '''
         super(VAECNN, self).__init__()
         self.latent_dim = latent_dim
@@ -336,7 +336,6 @@ class VAECNN(torch.nn.Module):
         self.normalization = normalization
         
         kernel_size = 3
-        hidden_channels = 32
         self.encoder = ConvEncoder(self.freq_dim, latent_dim, self.in_channels, hidden_channels, kernel_size)
         self.decoder = ConvDecoder(self.freq_dim, latent_dim, self.in_channels, hidden_channels, kernel_size)
 

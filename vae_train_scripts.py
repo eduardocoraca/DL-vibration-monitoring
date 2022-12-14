@@ -267,6 +267,7 @@ def train_damage(config=None):
             'normalization': config.normalization,
             'num_resets': config.num_resets,
             'channels': config.channels,
+            'hidden_channels': config.hidden_channels
         }
 
         path_data = "data/"
@@ -411,8 +412,6 @@ def train_damage(config=None):
             )
             gc.collect()
             plt.close('all')
-
-
 
 
 def train_ds4_dmg(config=None):
