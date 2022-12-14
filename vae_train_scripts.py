@@ -307,18 +307,14 @@ def train_damage(config=None):
                 lambda x: (x - x.min()) / (x.max() - x.min())
             )
             normalization = None
+
         elif hparams["normalization"] == "z-score":
-            mu_train = data_train_norm["features"].mean(axis=0)
-            std_train = data_train_norm["features"].mean(axis=0)
+            mu_train = data_dmg_1["features"].mean(axis=(0,1))
+            std_train = data_dmg_1["features"].mean(axis=(0,1))
             transform = torchvision.transforms.Lambda(
                 lambda x: (x - mu_train) / std_train
             )
             normalization = {'mu':mu_train, 'std':std_train}
-        elif hparams['normalization'] == "sum":
-            transform = torchvision.transforms.Lambda(
-                lambda x: x/x.sum()
-            )
-            normalization = None
 
         norm_dataset = Dataset(
             x=data_norm["features"],

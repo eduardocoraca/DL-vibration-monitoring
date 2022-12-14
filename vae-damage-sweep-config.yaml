@@ -14,16 +14,17 @@ parameters:
   batch_size:
     values: [64]
   beta:
-    values: [0.01]
+    #values: [0.01,0.1,1,10,50,100]
+    values: [1,15,20,25,30,35]
   epochs:
-    values: [2]
+    values: [80]
   learning_rate:
     values: [1e-4]
   ### VAE Loss
   epoch_resets:
     values: [25]
   num_resets:
-    values: [1]
+    values: [0]
   ### VAE Model
   latent_dim:
     values: [2]
@@ -31,4 +32,4 @@ parameters:
     values: ['cnn']
   ### normalization
   normalization:
-    values: ['min-max']
+    values: ['z-score']
