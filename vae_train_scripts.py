@@ -399,12 +399,12 @@ def train_damage(config=None):
             wandb_fig_z = wandb.Image(figs['fig_z'])
             wandb_fig_z1z2 = wandb.Image(figs['fig_z1z2'])
             wandb_fig_z1z2_s = wandb.Image(figs['fig_z1z2_s'])
-            #wandb_fig_x = wandb.Image(figs['fig_x'])
-            #wandb_fig_xrec = wandb.Image(figs['fig_xrec'])
+            wandb_fig_x = wandb.Image(figs['fig_x'])
+            wandb_fig_xrec = wandb.Image(figs['fig_xrec'])
             wandb.log(
                 {
-                    #"Input Data": wandb_fig_x,
-                    #"Reconstructed Data": wandb_fig_xrec,
+                    "Input Data": wandb_fig_x,
+                    "Reconstructed Data": wandb_fig_xrec,
                     f"Latent Variables {mode}": wandb_fig_z,
                     f"Latent Variables z1xz2 {mode}": wandb_fig_z1z2,
                     f"Latent Variables z1xz2 per sensor {mode}": wandb_fig_z1z2_s,

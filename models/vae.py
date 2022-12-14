@@ -77,7 +77,7 @@ class VAELoss(torch.nn.Module):
         self.num_resets = num_resets # no. of KL resets
         self.current_beta = 0 # beta running value
         self.current_time = 0 # tracking the number of resets
-        self.mse = torch.nn.MSELoss(reduction='sum')
+        self.mse = torch.nn.MAELoss(reduction='sum')
         self.epoch_resets = epoch_resets  # epochs to achieve final beta
         self.beta_rate = self.beta/self.epoch_resets
 
@@ -228,6 +228,7 @@ class VAE(torch.nn.Module):
     def decode(self, x):
         x = self.decoder(x)
         x = x.unsqueeze(1)
+        x = torch.sigmoid(x)
         return x
 
     def sample(self, mu, logvar):

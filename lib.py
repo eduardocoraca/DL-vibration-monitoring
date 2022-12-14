@@ -706,28 +706,28 @@ def plot_test(pred:dict):
         h = pred[s]['health_ind'].squeeze()
         samples = np.arange(len(h))
 
-        # x = pred[s]['x']
-        # x_rec = pred[s]['x_rec']
+        x = pred[s]['x']
+        x_rec = pred[s]['x_rec']
         t_avg = pred[s]['t']
         idx = np.arange(len(h))
         mu = pred[s]['mu']
         stddev = pred[s]['stddev']
 
-        # ax = fig_x.add_subplot(2,2,i)
-        # ax.set_title(f'Sensor {4-int(s[1])}')
-        # ax.pcolormesh(samples, np.linspace(0,128,x.shape[-1]), x[:,0,:].T, cmap='coolwarm', rasterized=True)
-        # ax.set_xlim([0, samples[-1]])
-        # ax.set_xlabel('Sample')
-        # ax.set_ylabel('f (Hz)')
-        # fig_x.tight_layout()
+        ax = fig_x.add_subplot(2,2,i)
+        ax.set_title(f'Sensor {4-int(s[1])}')
+        ax.pcolormesh(samples, np.linspace(0,128,x.shape[-1]), x[:,0,:].T, cmap='coolwarm', rasterized=True)
+        ax.set_xlim([0, samples[-1]])
+        ax.set_xlabel('Sample')
+        ax.set_ylabel('f (Hz)')
+        fig_x.tight_layout()
 
-        # ax = fig_xrec.add_subplot(2,2,i)
-        # ax.set_title(f'Sensor {4-int(s[1])}')
-        # ax.pcolormesh(samples, np.linspace(0,128,x_rec.shape[-1]), x_rec[:,0,:].T, cmap='coolwarm', rasterized=True)
-        # ax.set_xlim([0, samples[-1]])
-        # ax.set_xlabel('Sample')
-        # ax.set_ylabel('f (Hz)')
-        # fig_xrec.tight_layout()
+        ax = fig_xrec.add_subplot(2,2,i)
+        ax.set_title(f'Sensor {4-int(s[1])}')
+        ax.pcolormesh(samples, np.linspace(0,128,x_rec.shape[-1]), x_rec[:,0,:].T, cmap='coolwarm', rasterized=True)
+        ax.set_xlim([0, samples[-1]])
+        ax.set_xlabel('Sample')
+        ax.set_ylabel('f (Hz)')
+        fig_xrec.tight_layout()
         
         ax = fig_z.add_subplot(2,2,i)
         cmap = matplotlib.cm.get_cmap('tab20')
