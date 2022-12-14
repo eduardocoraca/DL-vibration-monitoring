@@ -14,7 +14,7 @@ class PLModel(LightningModule):
         )
 
         if hparams['model'] == 'mlp': #not used
-            self.model = VAE(latent_dim=hparams['latent_dim'], input_dim=hparams['input_dim'])
+            self.model = VAE(latent_dim=hparams['latent_dim'], input_dim=hparams['freq_dim'])
         
         elif hparams['model'] == 'cnn':
             self.model = VAECNN(
@@ -183,7 +183,6 @@ class ConvDecoder(torch.nn.Module):
     def forward(self,x:torch.Tensor) -> torch.Tensor:
         return self.layers(x)
 
-
 class VAE(torch.nn.Module):
     '''VAE model with linear layers and ReLU activation.
     '''
@@ -221,12 +220,14 @@ class VAE(torch.nn.Module):
         self.normalization = 'z-score'
 
     def encode(self, x):
+        x = x[:,0,:]
         x = self.encoder(x)
         mu, logvar = x[:,0:self.latent_dim], x[:,self.latent_dim:]
         return mu, logvar
     
     def decode(self, x):
         x = self.decoder(x)
+        x = x.unsqueeze(1)
         return x
 
     def sample(self, mu, logvar):

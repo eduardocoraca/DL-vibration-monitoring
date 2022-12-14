@@ -413,7 +413,6 @@ def train_damage(config=None):
             gc.collect()
             plt.close('all')
 
-
 def train_ds4_dmg(config=None):
     with wandb.init(config=config):
         config = wandb.config
