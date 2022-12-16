@@ -36,6 +36,7 @@ def train_normal(config=None):
             'normalization': config.normalization,
             'num_resets': config.num_resets,
             'channels': config.channels,
+            'hidden_channels': config.hidden_channels
         }
 
         path_data = "data/"
