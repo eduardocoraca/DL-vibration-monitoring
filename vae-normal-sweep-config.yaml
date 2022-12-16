@@ -12,11 +12,11 @@ parameters:
   channels:
     values: ["comp"]
   batch_size:
-    values: [64]
+    values: [128]
   beta:
-    values: [0.01]
+    values: [0.01,0.1,1,10]
   epochs:
-    values: [2]
+    values: [100]
   learning_rate:
     values: [1e-4]
   ### VAE Loss
@@ -31,4 +31,4 @@ parameters:
     values: ['cnn']
   ### normalization
   normalization:
-    values: ['min-max']
+    values: ['db-z-score', 'z-score', 'min-max']
