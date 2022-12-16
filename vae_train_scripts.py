@@ -76,6 +76,7 @@ def train_normal(config=None):
                 lambda x: (x - x.min()) / (x.max() - x.min())
             )
             normalization = None
+        
         elif hparams["normalization"] == "z-score":
             mu_train = data_train_norm["features"].mean(axis=0)
             std_train = data_train_norm["features"].mean(axis=0)
@@ -83,11 +84,17 @@ def train_normal(config=None):
                 lambda x: (x - mu_train) / std_train
             )
             normalization = {'mu':mu_train, 'std':std_train}
-        elif hparams['normalization'] == "sum":
-            transform = torchvision.transforms.Lambda(
-                lambda x: x/x.sum()
+        
+        elif hparams["normalization"] == "db-z-score":
+            mu_train = 20*np.log10(data_train_norm["features"]).mean(axis=(0,1))
+            std_train = 20*np.log10(data_train_norm["features"]).std(axis=(0,1))
+            transform = torchvision.transforms.Compose(
+                [
+                    torchvision.transforms.Lambda(lambda x: 20*np.log10(x)),
+                    torchvision.transforms.Lambda(lambda x: (x - mu_train) / std_train),
+                ]
             )
-            normalization = None
+            normalization = {'mu':mu_train, 'std':std_train}
 
         train_dataset_norm = Dataset(
             x=data_train_norm["features"],

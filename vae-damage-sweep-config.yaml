@@ -16,14 +16,14 @@ parameters:
   beta:
     values: [5,10,15,20,25]
   epochs:
-    values: [80]
+    values: [100]
   learning_rate:
     values: [1e-5]
   ### VAE Loss
   epoch_resets:
     values: [25]
   num_resets:
-    values: [0]
+    values: [1]
   ### VAE Model
   hidden_channels:
     values: [64]
