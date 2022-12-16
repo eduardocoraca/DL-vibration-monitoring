@@ -853,7 +853,7 @@ def plot_test_dmg(test_pred:dict, pca=None):
     return figs, pca, n_90
 
 
-def get_threshold_hist(train_pred:dict, val_pred:dict, dmg_pred:dict) -> tuple:
+def OLD_get_threshold_hist(train_pred:dict, val_pred:dict, dmg_pred:dict) -> tuple:
     '''Plots the data histogram and the computed beta PDF.
     Returns:
         (fig, params)
@@ -898,11 +898,12 @@ def get_threshold_hist(train_pred:dict, val_pred:dict, dmg_pred:dict) -> tuple:
     return fig, params, threshold
 
 
-def get_threshold_hist_ds4(train_pred:dict, val_pred:dict) -> tuple:
+def get_threshold_hist(train_pred:dict, val_pred:dict, p:float=0.95) -> tuple:
     '''Plots the data histogram and the computed lognormal PDF.
     Args:
         train_pred: predictions of the training dataset
         val_pred: predictinos of the validation dataset
+        p: probability above which the sample is abnormal
     Returns:
         fig: figure containing error histograms and the estimated distribution for each sensor
         parameters: dict containing the distribution pararmeters for each sensor
@@ -925,7 +926,7 @@ def get_threshold_hist_ds4(train_pred:dict, val_pred:dict) -> tuple:
             x = np.arange(step,size,step)
             pdf_fitted = dist.pdf(x, *arg, loc=loc, scale=scale)
             cdf_fitted = dist.cdf(x, *arg, loc=loc, scale=scale)
-            thresholds[s] = x[np.argwhere(cdf_fitted >= 0.999)[0]]
+            thresholds[s] = x[np.argwhere(cdf_fitted >= p)[0]]
 
     # figure
     fig = plt.figure(figsize=(20,10))
@@ -949,8 +950,7 @@ def get_threshold_hist_ds4(train_pred:dict, val_pred:dict) -> tuple:
 
     return fig, parameters, thresholds
 
-
-def plot_hist(normal_pred:dict, dmg_pred:dict, params:tuple, threshold:float) -> tuple:
+def OLD_plot_hist(normal_pred:dict, dmg_pred:dict, params:tuple, threshold:float) -> tuple:
     '''Plots the data histogram and the PDF.
     Args:
         normal_pred: dict containing normal data
@@ -993,7 +993,7 @@ def plot_hist(normal_pred:dict, dmg_pred:dict, params:tuple, threshold:float) ->
     fig.tight_layout()
     return fig
 
-def plot_hist_ds4(pred:dict, parameters:tuple, threshold:float) -> tuple:
+def plot_hist(pred:dict, parameters:tuple, threshold:float) -> tuple:
     '''Plots the data histogram and the PDF.
     Args:
         pred: dict containing damaged (or normal) data

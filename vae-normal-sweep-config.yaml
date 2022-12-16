@@ -25,6 +25,8 @@ parameters:
   num_resets:
     values: [1]
   ### VAE Model
+  hidden_channels:
+    values: [64]
   latent_dim:
     values: [2]
   model:

@@ -179,18 +179,19 @@ def train_normal(config=None):
 
         ### threshold
 
-        fig_hist_trainval, parameters, threshold = get_threshold_hist_ds4(
-            train_pred=train_pred,
-            val_pred=val_pred,
+        fig_hist_trainval, parameters, threshold = get_threshold_hist(
+            train_pred = train_pred,
+            val_pred = val_pred,
+            p = 0.95
         )
 
-        fig_hist_test = plot_hist_ds4(
+        fig_hist_test = plot_hist(
             pred=test_pred,
             parameters=parameters,
             threshold=threshold
         )
 
-        fig_hist_dmg = plot_hist_ds4(
+        fig_hist_dmg = plot_hist(
             pred=dmg_pred,
             parameters=parameters,
             threshold=threshold
@@ -232,16 +233,16 @@ def train_normal(config=None):
 
         figs = plot_test(all_pred)
 
-        #wandb_fig_x = wandb.Image(figs['fig_x'])
+        wandb_fig_x = wandb.Image(figs['fig_x'])
         wandb_fig_z = wandb.Image(figs['fig_z'])
         wandb_fig_z1z2 = wandb.Image(figs['fig_z1z2'])
         wandb_fig_z1z2_s = wandb.Image(figs['fig_z1z2_s'])
-        #wandb_fig_xrec = wandb.Image(figs['fig_xrec'])
+        wandb_fig_xrec = wandb.Image(figs['fig_xrec'])
         
         wandb.log(
             {
-                #"Input Data": wandb_fig_x,
-                #"Reconstructed Data": wandb_fig_xrec,
+                "Input Data": wandb_fig_x,
+                "Reconstructed Data": wandb_fig_xrec,
                 "Latent Variables": wandb_fig_z,
                 "Latent Variables z1xz2": wandb_fig_z1z2,
                 "Latent Variables z1xz2 per sensor": wandb_fig_z1z2_s,
