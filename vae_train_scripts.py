@@ -299,6 +299,8 @@ def train_damage(config=None):
         data_dmg_1 = data_split["dmg_1"]
         data_dmg_2 = data_split["dmg_2"]
 
+        data_dmg_all = merge_data((data_dmg_1, data_dmg_2))
+
         data_norm = merge_data((data_train_norm, data_val_norm, data_test_norm))
         data_all = merge_data(
             (
@@ -327,8 +329,8 @@ def train_damage(config=None):
             normalization = {'mu':mu_train, 'std':std_train}
 
         elif hparams["normalization"] == "db-z-score":
-            mu_train = 20*np.log10(data_dmg_1["features"]).mean(axis=(0,1))
-            std_train = 20*np.log10(data_dmg_1["features"]).std(axis=(0,1))
+            mu_train = 20*np.log10(data_dmg_all["features"]).mean(axis=(0,1))
+            std_train = 20*np.log10(data_dmg_all["features"]).std(axis=(0,1))
             transform = torchvision.transforms.Compose(
                 [
                     torchvision.transforms.Lambda(lambda x: 20*np.log10(x)),
@@ -358,6 +360,13 @@ def train_damage(config=None):
             t=data_dmg_2['tensions']
         )
 
+        dmg_all_dataset = Dataset(
+            x=data_dmg_all["features"],
+            y=data_dmg_all["y"],
+            transform=transform,
+            t=data_dmg_all['tensions']
+        )
+
         all_dataset = Dataset(
             x=data_all["features"],
             y=data_all["y"],
@@ -366,11 +375,11 @@ def train_damage(config=None):
         )
 
         train_dataloader_norm = DataLoader(
-            dmg_1_dataset, batch_size=hparams['batch_size'], shuffle=True
+            dmg_all_dataset, batch_size=hparams['batch_size'], shuffle=True
         )
 
         train_dataloader_noshuffle_norm = DataLoader(
-            dmg_1_dataset, batch_size=hparams['batch_size'], shuffle=False
+            dmg_all_dataset, batch_size=hparams['batch_size'], shuffle=False
         )
 
         val_dataloader_norm = DataLoader(
