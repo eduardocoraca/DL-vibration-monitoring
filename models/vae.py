@@ -13,7 +13,7 @@ class PLModel(LightningModule):
             num_resets=hparams['num_resets']           
         )
 
-        if hparams['model'] == 'mlp': #not used
+        if hparams['model'] == 'mlp':
             self.model = VAE(latent_dim=hparams['latent_dim'], input_dim=hparams['freq_dim'])
         
         elif hparams['model'] == 'cnn':
@@ -26,7 +26,8 @@ class PLModel(LightningModule):
                 )
 
         if normalization is not None:
-            self.model.save_norm(mu=normalization['mu'], std=normalization['std'])
+            self.norm_params = normalization
+            #self.model.save_norm(mu=normalization['mu'], std=normalization['std'])
 
     def training_step(self, train_batch, batch_idx):
         x,_,_ = train_batch

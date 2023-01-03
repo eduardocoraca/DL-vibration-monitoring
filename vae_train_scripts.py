@@ -339,6 +339,17 @@ def train_damage(config=None):
             )
             normalization = {'mu':mu_train, 'std':std_train}
 
+        elif hparams["normalization"] == "sum-z-score":
+            mu_train = (data_dmg_all["features"]/data_dmg_all["features"].sum(axis=-1,keepdims=True)).mean(axis=(0,1))
+            std_train = (data_dmg_all["features"]/data_dmg_all["features"].sum(axis=-1,keepdims=True)).std(axis=(0,1))
+            transform = torchvision.transforms.Compose(
+                [
+                    torchvision.transforms.Lambda(lambda x: x/(x.sum(axis=-1,keepdims=True))),
+                    torchvision.transforms.Lambda(lambda x: (x - mu_train) / std_train),
+                ]
+            )
+            normalization = {'mu':mu_train, 'std':std_train}
+
         norm_dataset = Dataset(
             x=data_norm["features"],
             y=data_norm["y"],
