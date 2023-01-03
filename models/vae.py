@@ -229,7 +229,6 @@ class VAE(torch.nn.Module):
     def decode(self, x):
         x = self.decoder(x)
         x = x.unsqueeze(1)
-        x = torch.sigmoid(x)
         return x
 
     def sample(self, mu, logvar):
